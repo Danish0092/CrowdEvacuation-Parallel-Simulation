@@ -73,6 +73,16 @@ inline void resolveMove(Agent& a,
     if (!collidesObstacle(nx, ny, obstacles) && !collidesWall(nx, ny, exits)) { a.x = nx; a.y = ny; }
     else if (!collidesObstacle(nx, a.y, obstacles) && !collidesWall(nx, a.y, exits)) { a.x = nx; }
     else if (!collidesObstacle(a.x, ny, obstacles) && !collidesWall(a.x, ny, exits)) { a.y = ny; }
+
+    // Stuck detection: if barely moved for 300 frames, force-evacuate
+    a.stuckFrames++;
+    if (a.stuckFrames % 60 == 0) {
+        float dx = a.x - a.checkX, dy = a.y - a.checkY;
+        if (dx * dx + dy * dy < 4.0f) {   // less than 2px net movement in 60 frames
+            a.evacuated = true; return;
+        }
+        a.checkX = a.x; a.checkY = a.y;
+    }
 }
 
 // ─── Agent Initialisation ────────────────────────────────

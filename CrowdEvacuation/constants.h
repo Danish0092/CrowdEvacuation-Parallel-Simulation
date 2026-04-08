@@ -57,6 +57,8 @@ struct Agent {
     bool      evacuated = false;
     int       zone = 0;
     sf::Color color;
+    int stuckFrames = 0;
+    float checkX = 0, checkY = 0;
 };
 
 struct Stats {

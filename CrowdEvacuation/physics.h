@@ -4,6 +4,7 @@
 #include <vector>
 #include <cmath>
 #include <cstdlib>
+#include <algorithm>
 
 // ─── Collision Checks ────────────────────────────────────
 
@@ -27,8 +28,6 @@ inline bool collidesWall(float x, float y,
     return false;
 }
 
-// FIX: agent is evacuated once clearly outside the room through an exit opening,
-// OR if it somehow escaped entirely (catch-all prevents stuck invisible agents).
 inline bool isAtExit(const Agent& a, const std::vector<Exit>& exits)
 {
     if (a.x < WALL_LEFT - 5.f &&
@@ -39,21 +38,42 @@ inline bool isAtExit(const Agent& a, const std::vector<Exit>& exits)
         a.x >= exits[2].x0 - AGENT_RADIUS && a.x <= exits[2].x1 + AGENT_RADIUS) return true;
     if (a.y > WALL_BOTTOM + 5.f &&
         a.x >= exits[3].x0 - AGENT_RADIUS && a.x <= exits[3].x1 + AGENT_RADIUS) return true;
-    // Catch-all: escaped entirely outside the room
     if (a.x < WALL_LEFT - EXIT_WIDTH || a.x > WALL_RIGHT + EXIT_WIDTH ||
         a.y < WALL_TOP - EXIT_WIDTH || a.y > WALL_BOTTOM + EXIT_WIDTH)
         return true;
     return false;
 }
 
-inline Exit nearestExit(const Agent& a, const std::vector<Exit>& exits)
+// Cached exit loads — recomputed every 30 frames only
+inline std::vector<int> g_exitLoad;
+inline int g_exitLoadFrame = 0;
+
+inline Exit nearestExit(const Agent& a, const std::vector<Exit>& exits,
+    const std::vector<Agent>& allAgents, int currentFrame)
 {
+    // Recompute load cache every 30 frames
+    if (currentFrame - g_exitLoadFrame >= 30 || g_exitLoad.empty()) {
+        g_exitLoad.assign(exits.size(), 0);
+        for (const auto& other : allAgents) {
+            if (other.evacuated) continue;
+            int best = 0; float bestD = 1e9f;
+            for (int k = 0; k < (int)exits.size(); k++) {
+                float dx = exits[k].x - other.x, dy = exits[k].y - other.y;
+                float d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = k; }
+            }
+            g_exitLoad[best]++;
+        }
+        g_exitLoadFrame = currentFrame;
+    }
+
     const Exit* best = &exits[0];
-    float bestD = 1e9f;
-    for (const auto& e : exits) {
-        float dx = e.x - a.x, dy = e.y - a.y;
-        float d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; best = &e; }
+    float bestScore = 1e9f;
+    for (int k = 0; k < (int)exits.size(); k++) {
+        float dx = exits[k].x - a.x, dy = exits[k].y - a.y;
+        float dist = std::sqrt(dx * dx + dy * dy);
+        float score = dist + g_exitLoad[k] * 8.0f;
+        if (score < bestScore) { bestScore = score; best = &exits[k]; }
     }
     return *best;
 }
@@ -74,11 +94,11 @@ inline void resolveMove(Agent& a,
     else if (!collidesObstacle(nx, a.y, obstacles) && !collidesWall(nx, a.y, exits)) { a.x = nx; }
     else if (!collidesObstacle(a.x, ny, obstacles) && !collidesWall(a.x, ny, exits)) { a.y = ny; }
 
-    // Stuck detection: if barely moved for 300 frames, force-evacuate
+    // Stuck detection: check net displacement every 60 frames
     a.stuckFrames++;
     if (a.stuckFrames % 60 == 0) {
         float dx = a.x - a.checkX, dy = a.y - a.checkY;
-        if (dx * dx + dy * dy < 4.0f) {   // less than 2px net movement in 60 frames
+        if (dx * dx + dy * dy < 4.0f) {
             a.evacuated = true; return;
         }
         a.checkX = a.x; a.checkY = a.y;
@@ -102,13 +122,39 @@ inline std::vector<Agent> initAgents(const std::vector<Obstacle>& obstacles,
             y = WALL_TOP + 10 + rand() % roomH;
             tries++;
         } while ((collidesObstacle(x, y, obstacles) || collidesWall(x, y, exits)) && tries < 200);
+
         agents[i].x = x; agents[i].y = y;
         agents[i].vx = 0; agents[i].vy = 0;
         agents[i].evacuated = false;
+        agents[i].stuckFrames = 0;
+        agents[i].checkX = x; agents[i].checkY = y;
+
         int zx = (x < (WALL_LEFT + WALL_RIGHT) / 2) ? 0 : 1;
         int zy = (y < (WALL_TOP + WALL_BOTTOM) / 2) ? 0 : 1;
         agents[i].zone = zy * 2 + zx;
-        agents[i].color = zoneColors[agents[i].zone];
+
+        // ── Panic variation (0.7 = calm/slow, 1.5 = panicked/fast) ──
+        float panicLevel = 0.7f + (rand() % 100) / 100.0f * 0.8f;
+        agents[i].speed = AGENT_SPEED * panicLevel;
+        agents[i].panic = panicLevel;
+
+        // ── Color tint by panic level ──
+        sf::Color base = zoneColors[agents[i].zone];
+        if (panicLevel > 1.2f) {
+            agents[i].color = sf::Color(
+                (sf::Uint8)std::min(255, (int)base.r + 80),
+                (sf::Uint8)std::max(0, (int)base.g - 60),
+                (sf::Uint8)std::max(0, (int)base.b - 60));
+        }
+        else if (panicLevel < 0.85f) {
+            agents[i].color = sf::Color(
+                (sf::Uint8)std::max(0, (int)base.r - 40),
+                (sf::Uint8)std::min(255, (int)base.g + 40),
+                (sf::Uint8)std::min(255, (int)base.b + 80));
+        }
+        else {
+            agents[i].color = base;
+        }
     }
     return agents;
 }

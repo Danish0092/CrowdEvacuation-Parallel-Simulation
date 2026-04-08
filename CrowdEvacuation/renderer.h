@@ -453,8 +453,6 @@ inline void drawSim(sf::RenderWindow& win, sf::Font& font,
     for (const auto& a : ag) {
         if (a.evacuated) continue;
         sf::Color c = a.color;
-        if (mode == Mode::SERIAL) c = Palette::SERIAL_C;
-        else if (mode == Mode::OPENMP) c = Palette::OMP_C;
 
         agGlow.setFillColor({ c.r, c.g, c.b, 25 });
         agGlow.setPosition(a.x - AGENT_RADIUS - 3, a.y - AGENT_RADIUS - 3);

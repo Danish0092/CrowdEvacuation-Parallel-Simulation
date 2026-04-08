@@ -7,25 +7,18 @@
 #include <vector>
 #include <cmath>
 
-// ─── Shared frame counter ─────────────────────────────────
-inline int g_simFrame = 0;
-
-// ─── Common force computation for one agent ──────────────
 static inline void computeForces(int i,
     const std::vector<Agent>& ag,
     const std::vector<Exit>& exits,
-    float& outVx, float& outVy,
-    int currentFrame)
+    float& outVx, float& outVy)
 {
     const Agent& a = ag[i];
-
-    Exit e = nearestExit(a, exits, ag, currentFrame);
+    const Exit& e = exits[a.exitIndex >= 0 ? a.exitIndex : 0];
     float dx = e.x - a.x, dy = e.y - a.y;
     float dist = std::sqrt(dx * dx + dy * dy);
 
-    float spd = a.speed * a.panic;
-    outVx = (dist > 0.1f) ? (dx / dist) * spd : 0.f;
-    outVy = (dist > 0.1f) ? (dy / dist) * spd : 0.f;
+    outVx = (dist > 0.1f) ? (dx / dist) * AGENT_SPEED : 0.f;
+    outVy = (dist > 0.1f) ? (dy / dist) * AGENT_SPEED : 0.f;
 
     for (int j = 0; j < (int)ag.size(); j++) {
         if (i == j || ag[j].evacuated) continue;
@@ -44,12 +37,12 @@ inline void updateSerial(std::vector<Agent>& ag,
     const std::vector<Obstacle>& obstacles,
     const std::vector<Exit>& exits)
 {
-    g_simFrame++;
     for (int i = 0; i < (int)ag.size(); i++) {
         if (ag[i].evacuated) continue;
         if (isAtExit(ag[i], exits)) { ag[i].evacuated = true; continue; }
+        updateStuck(ag[i], exits);
         float vx, vy;
-        computeForces(i, ag, exits, vx, vy, g_simFrame);
+        computeForces(i, ag, exits, vx, vy);
         resolveMove(ag[i], vx, vy, obstacles, exits);
     }
 }
@@ -59,13 +52,13 @@ inline void updateOpenMP(std::vector<Agent>& ag,
     const std::vector<Obstacle>& obstacles,
     const std::vector<Exit>& exits)
 {
-    g_simFrame++;
 #pragma omp parallel for schedule(dynamic, 16) num_threads(omp_get_max_threads())
     for (int i = 0; i < (int)ag.size(); i++) {
         if (ag[i].evacuated) continue;
         if (isAtExit(ag[i], exits)) { ag[i].evacuated = true; continue; }
+        updateStuck(ag[i], exits);
         float vx, vy;
-        computeForces(i, ag, exits, vx, vy, g_simFrame);
+        computeForces(i, ag, exits, vx, vy);
         resolveMove(ag[i], vx, vy, obstacles, exits);
     }
 }
@@ -75,7 +68,6 @@ inline void updateMPI(std::vector<Agent>& ag,
     const std::vector<Obstacle>& obstacles,
     const std::vector<Exit>& exits)
 {
-    g_simFrame++;
     float midX = (WALL_LEFT + WALL_RIGHT) / 2.f;
     float midY = (WALL_TOP + WALL_BOTTOM) / 2.f;
 
@@ -91,8 +83,9 @@ inline void updateMPI(std::vector<Agent>& ag,
         for (int i : zones[zid]) {
             if (ag[i].evacuated) continue;
             if (isAtExit(ag[i], exits)) { ag[i].evacuated = true; continue; }
+            updateStuck(ag[i], exits);
             float vx, vy;
-            computeForces(i, ag, exits, vx, vy, g_simFrame);
+            computeForces(i, ag, exits, vx, vy);
             resolveMove(ag[i], vx, vy, obstacles, exits);
         }
         };
@@ -109,7 +102,6 @@ inline void updateGPU(std::vector<Agent>& ag,
     const std::vector<Obstacle>& obstacles,
     const std::vector<Exit>& exits)
 {
-    g_simFrame++;
     int n = (int)ag.size();
     std::vector<float> fx(n, 0.f), fy(n, 0.f);
     std::vector<bool>  evac(n, false);
@@ -118,7 +110,8 @@ inline void updateGPU(std::vector<Agent>& ag,
     for (int i = 0; i < n; i++) {
         if (ag[i].evacuated) continue;
         if (isAtExit(ag[i], exits)) { evac[i] = true; continue; }
-        computeForces(i, ag, exits, fx[i], fy[i], g_simFrame);
+        updateStuck(ag[i], exits);
+        computeForces(i, ag, exits, fx[i], fy[i]);
     }
 
 #pragma omp parallel for schedule(static) num_threads(16)

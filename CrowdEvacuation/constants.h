@@ -2,28 +2,24 @@
 #include <SFML/Graphics.hpp>
 #include <string>
 #include <vector>
-#include <thread>   // <-- Added to ensure std::thread is available to translation units
+#include <thread>
 
-// ─── Window & Simulation Constants ───────────────────────
 constexpr int   WIDTH = 1600;
 constexpr int   HEIGHT = 900;
 constexpr int   NUM_AGENTS = 800;
 constexpr float AGENT_RADIUS = 4.5f;
-constexpr float AGENT_SPEED = 2.2f;       // slightly reduced for stability
+constexpr float AGENT_SPEED = 2.2f;
 constexpr int   PANEL_WIDTH = 300;
 constexpr int   WALL_THICKNESS = 15;
 constexpr int   EXIT_WIDTH = 80;
 
-// Inner-boundary of the simulation room
 constexpr float WALL_LEFT = 150.f + WALL_THICKNESS;
 constexpr float WALL_RIGHT = WIDTH - PANEL_WIDTH - WALL_THICKNESS;
 constexpr float WALL_TOP = 50.f + WALL_THICKNESS;
 constexpr float WALL_BOTTOM = HEIGHT - WALL_THICKNESS - 50.f;
 
-// ─── Simulation Modes ───────────────────────────────────
 enum class Mode { MENU, SERIAL, OPENMP, MPI_SIM, GPU_SIM };
 
-// ─── Color Palette ───────────────────────────────────────
 namespace Palette {
     inline const sf::Color BG = { 18,  18,  28 };
     inline const sf::Color PANEL = { 28,  28,  45 };
@@ -42,10 +38,9 @@ namespace Palette {
     inline const sf::Color WALL_C = { 80,  80,  120 };
 }
 
-// ─── Data Structures ─────────────────────────────────────
 struct Exit {
-    float x, y;              // exit center
-    float x0, y0, x1, y1;   // opening bounds
+    float x, y;
+    float x0, y0, x1, y1;
     std::string label;
 };
 
@@ -56,11 +51,10 @@ struct Agent {
     float     vx = 0, vy = 0;
     bool      evacuated = false;
     int       zone = 0;
+    int       exitIndex = -1;
+    int       stuckTimer = 0;   // frames with negligible movement
+    float     lastX = 0, lastY = 0; // position sampled for stuck detection
     sf::Color color;
-    float     speed = AGENT_SPEED;   // ADD THIS
-    float     panic = 1.0f;          // ADD THIS (1=calm, >1=panicked)
-    int       stuckFrames = 0;
-    float     checkX = 0, checkY = 0;
 };
 
 struct Stats {
